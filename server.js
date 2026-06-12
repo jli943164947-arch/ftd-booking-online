@@ -142,6 +142,14 @@ function isValidReservation(item) {
 }
 
 async function handleApi(req, res) {
+  if (req.method === "GET" && req.url === "/api/storage-status") {
+    send(res, 200, JSON.stringify({
+      storage: dbReady ? "database" : "temporary-file",
+      persistent: dbReady
+    }), "application/json; charset=utf-8");
+    return true;
+  }
+
   if (req.method === "GET" && req.url === "/api/reservations") {
     try {
       send(res, 200, JSON.stringify(await readStoredReservations()), "application/json; charset=utf-8");
