@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>飞行部FTD预约</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <h1>飞行部FTD使用记录</h1>
+        <p>周三至周五预约计划查询</p>
+      </div>
+      <div class="stat"><span id="visibleCount">0</span> 条</div>
+    </header>
+
+    <section class="controls" aria-label="查询和操作">
+      <div class="tabs" role="tablist">
+        <button id="futureTab" class="tab active" type="button">未来一个月</button>
+        <button id="historyTab" class="tab" type="button">历史预约记录</button>
+      </div>
+      <div class="range" id="rangeText"></div>
+      <div class="actions">
+        <button id="newBooking" class="primary" type="button">新增预约</button>
+        <button id="exportExcel" class="secondary" type="button">导出Excel</button>
+      </div>
+    </section>
+
+    <section class="sheet-wrap" aria-label="FTD使用记录表格">
+      <div class="template-title">FTD使用记录（由使用中队填写，空白可供选择）务必保证模拟机使用人员与表格人员一致，每场上机总人数不超过5人</div>
+      <div id="schedule" class="schedule"></div>
+    </section>
+
+    <section class="notes">
+      <div>可切换查看未来一个月计划，或查询历史预约记录。</div>
+      <div>预约时间段为周三至周五：0800-1100、1200-1400、1410-1610、1620-1820，最远可预约到 <span id="maxDateText"></span>。</div>
+    </section>
+  </main>
+
+  <dialog id="bookingDialog" class="dialog">
+    <form id="bookingForm" method="dialog">
+      <div class="dialog-head">
+        <div>
+          <h2>新增预约</h2>
+          <p>周三至周五 · 自由选择使用时间</p>
+        </div>
+        <button class="icon-button" id="closeDialog" type="button" aria-label="关闭">×</button>
+      </div>
+
+      <div class="form-grid">
+        <label>
+          日期
+          <input id="bookingDate" type="date" required>
+        </label>
+        <label>
+          开始时间
+          <input id="startTime" type="time" required>
+        </label>
+        <label>
+          结束时间
+          <input id="endTime" type="time" required>
+        </label>
+      </div>
+
+      <p class="hint">预约时间段为周三至周五：0800-1100、1200-1400、1410-1610、1620-1820。预约人仍可自由选择具体开始和结束时间。</p>
+
+      <div class="people-head">
+        <h3>使用人员</h3>
+        <button id="addPerson" class="secondary compact" type="button">添加人员</button>
+      </div>
+      <div id="peopleList" class="people-list"></div>
+
+      <div class="dialog-actions">
+        <button class="secondary" id="cancelBooking" type="button">取消</button>
+        <button class="primary" type="submit">提交预约</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="detailDialog" class="dialog small">
+    <div class="dialog-head">
+      <div>
+        <h2 id="detailDate">预约详情</h2>
+        <p id="detailTime"></p>
+      </div>
+      <button class="icon-button" id="closeDetail" type="button" aria-label="关闭">×</button>
+    </div>
+    <div id="detailPeople" class="detail-people"></div>
+    <div class="dialog-actions">
+      <button class="secondary danger" id="deleteBooking" type="button">取消预约</button>
+      <button class="primary" id="okDetail" type="button">关闭</button>
+    </div>
+  </dialog>
+
+  <script src="./app.js"></script>
+</body>
+</html>
