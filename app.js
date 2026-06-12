@@ -166,9 +166,7 @@ function getRange() {
   const today = new Date();
   const todayKey = dateKey(today);
   const maxDate = addMonths(today, 1);
-  return viewMode === "history"
-    ? { startDate: addMonths(today, -12), endDate: maxDate, todayKey, maxDate }
-    : { startDate: parseDate(todayKey), endDate: maxDate, todayKey, maxDate };
+  return { startDate: parseDate(todayKey), endDate: maxDate, todayKey, maxDate };
 }
 
 function buildDayColumns(dayReservations) {
@@ -223,14 +221,49 @@ function buildRows(startDate, endDate) {
   }).filter((row) => isBookableDate(parseDate(row.date)));
 }
 
+function buildReservationRows() {
+  const dates = [...new Set(reservations.map((item) => item.date))]
+    .filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(key))
+    .sort((a, b) => parseDate(a) - parseDate(b));
+
+  return dates.map((key) => {
+    const dayReservations = reservations
+      .filter((item) => item.date === key)
+      .sort((a, b) => toMinutes(a.start) - toMinutes(b.start))
+      .map(normalizeReservation);
+    const columns = buildDayColumns(dayReservations);
+    return {
+      date: key,
+      label: formatDateLabel(key),
+      weekday: formatWeekday(key),
+      reservations: dayReservations,
+      cells: buildCells(dayReservations, columns),
+      hasReservations: dayReservations.length > 0
+    };
+  });
+}
+
+function getVisibleRows(startDate, endDate) {
+  return viewMode === "history" ? buildReservationRows() : buildRows(startDate, endDate);
+}
+
+function formatVisibleRange(rows, startDate, endDate) {
+  if (!rows.length) return "暂无预约记录";
+  const first = rows[0].date;
+  const last = rows[rows.length - 1].date;
+  return viewMode === "history"
+    ? `${formatDateLabel(first)} - ${formatDateLabel(last)}`
+    : `${formatDateLabel(dateKey(startDate))} - ${formatDateLabel(dateKey(endDate))}`;
+}
+
 function renderSchedule() {
   const { startDate, endDate, todayKey, maxDate } = getRange();
-  const rows = buildRows(startDate, endDate);
+  const rows = getVisibleRows(startDate, endDate);
   const visibleCount = rows.reduce((total, row) => total + row.reservations.length, 0);
 
   els.visibleCount.textContent = visibleCount;
   els.maxDateText.textContent = formatDateLabel(dateKey(maxDate));
-  els.rangeText.textContent = `${formatDateLabel(dateKey(startDate))} - ${formatDateLabel(dateKey(endDate))}`;
+  els.rangeText.textContent = formatVisibleRange(rows, startDate, endDate);
   els.futureTab.classList.toggle("active", viewMode === "future");
   els.historyTab.classList.toggle("active", viewMode === "history");
 
@@ -455,8 +488,10 @@ function buildExcelXml(rows, rangeText) {
 
 function exportExcel() {
   const { startDate, endDate } = getRange();
-  const rows = buildRows(startDate, endDate);
-  const rangeText = `${formatDateLabel(dateKey(startDate))}-${formatDateLabel(dateKey(endDate))}`;
+  const rows = getVisibleRows(startDate, endDate);
+  const rangeText = viewMode === "history" && rows.length
+    ? `${formatDateLabel(rows[0].date)}-${formatDateLabel(rows[rows.length - 1].date)}`
+    : `${formatDateLabel(dateKey(startDate))}-${formatDateLabel(dateKey(endDate))}`;
   const xml = buildExcelXml(rows, rangeText);
   const blob = new Blob([xml], { type: "application/vnd.ms-excel;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -474,8 +509,9 @@ els.futureTab.addEventListener("click", () => {
   renderSchedule();
 });
 
-els.historyTab.addEventListener("click", () => {
+els.historyTab.addEventListener("click", async () => {
   viewMode = "history";
+  reservations = await loadReservations();
   renderSchedule();
 });
 
