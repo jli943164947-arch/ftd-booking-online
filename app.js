@@ -84,8 +84,16 @@ async function loadReservations() {
     if (!response.ok) throw new Error("api failed");
     return await response.json();
   } catch (error) {
+    if (!isLocalPreview()) {
+      alert("在线预约记录读取失败，请稍后刷新页面。");
+      return [];
+    }
     return loadLocalReservations();
   }
+}
+
+function isLocalPreview() {
+  return ["", "localhost", "127.0.0.1"].includes(location.hostname);
 }
 
 function loadLocalReservations() {
@@ -107,6 +115,9 @@ async function saveReservations(next) {
     reservations = await response.json();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(reservations));
   } catch (error) {
+    if (!isLocalPreview()) {
+      throw new Error("在线保存失败，请稍后再试。");
+    }
     reservations = next;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     throw new Error("在线保存失败，请检查服务器是否启动。");
