@@ -156,7 +156,7 @@ function getRange() {
   const todayKey = dateKey(today);
   const maxDate = addMonths(today, 1);
   return viewMode === "history"
-    ? { startDate: addMonths(today, -12), endDate: parseDate(todayKey), todayKey, maxDate }
+    ? { startDate: addMonths(today, -12), endDate: maxDate, todayKey, maxDate }
     : { startDate: parseDate(todayKey), endDate: maxDate, todayKey, maxDate };
 }
 
