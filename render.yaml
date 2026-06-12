@@ -3,7 +3,7 @@ services:
     name: ftd-booking-online
     env: node
     plan: free
-    buildCommand: npm install
+    buildCommand: yarn install
     startCommand: node server.js
     autoDeploy: false
     envVars:
