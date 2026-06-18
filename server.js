@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const ExcelJS = require("exceljs");
 
 const PORT = Number(process.env.PORT || 3000);
 const ROOT = __dirname;
@@ -115,6 +116,124 @@ function send(res, status, body, contentType = "text/plain; charset=utf-8") {
   res.end(body);
 }
 
+function sendFile(res, buffer, fileName) {
+  res.writeHead(200, {
+    "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+    "Content-Length": buffer.length,
+    "Cache-Control": "no-store"
+  });
+  res.end(buffer);
+}
+
+function parseDateKey(key) {
+  const parts = key.split("-").map(Number);
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function dateKey(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function formatDateLabel(key) {
+  const date = parseDateKey(key);
+  return `${String(date.getMonth() + 1).padStart(2, "0")}月${String(date.getDate()).padStart(2, "0")}日`;
+}
+
+function formatWeekday(key) {
+  return ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][parseDateKey(key).getDay()];
+}
+
+function buildExportDates(reservations, mode, start, end) {
+  if (mode === "history") {
+    return [...new Set(reservations.map((item) => item.date))].sort();
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start || "") || !/^\d{4}-\d{2}-\d{2}$/.test(end || "")) {
+    return [];
+  }
+
+  const dates = [];
+  const current = parseDateKey(start);
+  const endDate = parseDateKey(end);
+  while (current <= endDate) {
+    const day = current.getDay();
+    if (day >= 3 && day <= 5) dates.push(dateKey(current));
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
+}
+
+function reservationCellText(reservation) {
+  const people = Array.isArray(reservation.people) ? reservation.people : [];
+  const teachers = people.filter((person) => person.role === "教员").map((person) => person.name).join("、") || "无";
+  const students = people.filter((person) => person.role === "学员").map((person) => person.name);
+  return [
+    `${reservation.start.replace(":", "")}-${reservation.end.replace(":", "")}`,
+    `教员：${teachers}`,
+    `学员：${students[0] || ""}`,
+    `学员：${students.slice(1).join("、")}`
+  ].join("\n");
+}
+
+async function buildExcelWorkbook(reservations, mode, start, end) {
+  const dates = buildExportDates(reservations, mode, start, end);
+  const grouped = dates.map((date) => ({
+    date,
+    reservations: reservations
+      .filter((item) => item.date === date)
+      .sort((a, b) => `${a.start}-${a.end}`.localeCompare(`${b.start}-${b.end}`))
+  }));
+  const maxBookings = Math.max(1, ...grouped.map((day) => day.reservations.length));
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("FTD使用记录", {
+    pageSetup: {
+      orientation: "landscape",
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0
+    }
+  });
+
+  sheet.getColumn(1).width = 18;
+  for (let index = 2; index <= maxBookings + 1; index += 1) {
+    sheet.getColumn(index).width = 30;
+  }
+
+  const border = {
+    top: { style: "thin", color: { argb: "FFD4DEDC" } },
+    left: { style: "thin", color: { argb: "FFD4DEDC" } },
+    bottom: { style: "thin", color: { argb: "FFD4DEDC" } },
+    right: { style: "thin", color: { argb: "FFD4DEDC" } }
+  };
+
+  grouped.forEach((day, rowIndex) => {
+    const row = sheet.getRow(rowIndex + 1);
+    row.height = 112;
+
+    const dateCell = row.getCell(1);
+    dateCell.value = `${formatDateLabel(day.date)}\n${formatWeekday(day.date)}`;
+    dateCell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FF172423" } };
+    dateCell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    dateCell.border = border;
+
+    for (let index = 0; index < maxBookings; index += 1) {
+      const cell = row.getCell(index + 2);
+      const reservation = day.reservations[index];
+      cell.value = reservation ? reservationCellText(reservation) : "";
+      cell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FF172423" } };
+      cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+      cell.border = border;
+      if (reservation) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFBF1E2" } };
+      }
+    }
+  });
+
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = "";
@@ -142,7 +261,9 @@ function isValidReservation(item) {
 }
 
 async function handleApi(req, res) {
-  if (req.method === "GET" && req.url === "/api/storage-status") {
+  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+
+  if (req.method === "GET" && url.pathname === "/api/storage-status") {
     send(res, 200, JSON.stringify({
       storage: dbReady ? "database" : "temporary-file",
       persistent: dbReady
@@ -150,7 +271,7 @@ async function handleApi(req, res) {
     return true;
   }
 
-  if (req.method === "GET" && req.url === "/api/reservations") {
+  if (req.method === "GET" && url.pathname === "/api/reservations") {
     try {
       send(res, 200, JSON.stringify(await readStoredReservations()), "application/json; charset=utf-8");
     } catch (error) {
@@ -159,7 +280,7 @@ async function handleApi(req, res) {
     return true;
   }
 
-  if (req.method === "POST" && req.url === "/api/reservations") {
+  if (req.method === "POST" && url.pathname === "/api/reservations") {
     try {
       const parsed = JSON.parse(await readBody(req));
       if (!Array.isArray(parsed) || !parsed.every(isValidReservation)) {
@@ -170,6 +291,21 @@ async function handleApi(req, res) {
       send(res, 200, JSON.stringify(await readStoredReservations()), "application/json; charset=utf-8");
     } catch (error) {
       send(res, 400, JSON.stringify({ error: "bad request" }), "application/json; charset=utf-8");
+    }
+    return true;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/export-reservations") {
+    try {
+      const mode = url.searchParams.get("mode") === "history" ? "history" : "future";
+      const start = url.searchParams.get("start") || "";
+      const end = url.searchParams.get("end") || "";
+      const reservations = await readStoredReservations();
+      const buffer = await buildExcelWorkbook(reservations, mode, start, end);
+      const range = mode === "history" ? "历史预约记录" : `${start}_${end}`;
+      sendFile(res, buffer, `飞行部FTD使用记录_${range}.xlsx`);
+    } catch (error) {
+      send(res, 500, JSON.stringify({ error: "export failed" }), "application/json; charset=utf-8");
     }
     return true;
   }
